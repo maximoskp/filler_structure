@@ -163,4 +163,4 @@ for i in range(epochs):
 
 
 # save training errors
-np.savez('saved_results/training_erros.npz', all_training_errors=all_training_errors)
+np.savez('saved_data/training_erros.npz', all_training_errors=all_training_errors)
