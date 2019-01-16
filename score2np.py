@@ -11,6 +11,7 @@ import numpy as np
 import os
 import glob
 import math
+import copy
 
 # the user should give the file name - the folder with the files
 def get_parts_np_from_file(fileName, parts_for_surface, time_res):
@@ -657,3 +658,157 @@ def squeeze_into_N_octaves(m, n, center=60):
     for i in range(0, center- (12*int(np.floor(n/2))) , 1):
         m_new[(i%12)-12,:] = np.logical_or(m_new[(i%12)-12,:], mc[i,:])
     return m_new
+
+def get_concat_startEnd_squeezeOcts(folderName, parts_for_surface, time_res, transpose = False, bin_out=True, voice_aug=False, sparse_aug=False, register_aug=[], padding=32, octave_squeeze=-1):
+    # INPUTS:
+    # folderName - string: the name of the folder - full path
+    # parts_for_surface - int array or 'all': parts to include to score
+    # time_res - int: e.g. 16 or 32 etc.
+    # transpose: True/False - augment or not with all +-6 transpositions
+    # OUTPUTS:
+    # m: the score matrices in np array (128, max_len*n_pieces)
+    # s: the structure matrix in np array (2, max_len*n_pieces)
+    # STRUCTURE matrix:
+    # [0,0]: no piece (in between)
+    # [1,0]: start (and before start if padded)
+    # [1,1]: main piece (between start and end)
+    # [0,1]: end (and after end if padded)
+    # structure transition area: how long the structure sequence for each part is
+    st_tr_len = 8
+    
+    allDocs = glob.glob(folderName + os.sep + "*.xml")
+    if len(allDocs) is 0:
+        print("Didn't find .xml file - looking for .mxl")
+        allDocs = glob.glob(folderName + os.sep + "*.mxl")
+    
+    # keep all matrices for each file
+    all_matrices = []
+    # keep the respective lengths to define -1 - padding
+    all_lengths = []
+    # keep structure mat
+    all_structures = []
+    for fileName in allDocs:
+        m, l = get_parts_np_from_file(fileName, parts_for_surface, time_res)
+        if octave_squeeze > 0:
+            m = squeeze_into_N_octaves(m, 3)
+        # structure mat
+        s = np.ones( (2,m.shape[1]) )
+        s[0, -(st_tr_len-1):] = 0
+        s[1, :st_tr_len] = 0
+        all_matrices.append(m)
+        all_lengths.append(l)
+        all_structures.append(s)
+    
+    # find max length for padding
+    all_lengths = np.array(all_lengths)
+    max_length = np.max(all_lengths)
+    
+    # pad-em-all
+    if padding > 0:
+        # initial padding
+        padder_mat = np.zeros((m.shape[0], padding))
+        padder_struct = np.zeros((2, padding))
+        # add beginning structure info in padding
+        padder_struct[0, -(st_tr_len-1):] = 1
+        # stack initial padding
+        all_matrices[0] = np.hstack( (padder_mat, all_matrices[0]) )
+        all_structures[0] = np.hstack( (padder_struct, all_structures[0]) )
+        for i in range(len(all_matrices)):
+            m = all_matrices[i]
+            # intermediate padder
+            padder_mat = np.zeros((m.shape[0], padding))
+            padder_struct = np.zeros((2, padding))
+            # add ending structure info in padding
+            padder_struct[1, :st_tr_len] = 1
+            # add beginning only if not final chunk
+            if i < ( len(all_matrices) - 1 ):
+                padder_struct[0, -(st_tr_len-1):] = 1
+            # stack intermediate padding
+            all_matrices[i] = np.hstack( (m, padder_mat) )
+            all_structures[i] = np.hstack( (all_structures[i], padder_struct) )
+    # stack structure
+    all_structures = np.hstack(all_structures)
+    # keep an instance of the original structure info for appending 
+    # in augmentation steps below
+    tmp_structure = copy.deepcopy( all_structures )
+    # stack em all
+    all_matrices = np.hstack(all_matrices)
+    
+    # check if +-6 transposition has been asked
+    if transpose:
+        print('performing transpositions')
+        initMat = np.array(all_matrices)
+        for i in range(1,7):
+            print('transposition: ', str(i))
+            tmpMat = np.roll(initMat, i, axis=0)
+            all_matrices = np.hstack( (all_matrices, tmpMat) )
+            if padding > 0:
+                all_structures = np.hstack( (all_structures, tmp_structure) )
+        for i in range(1,7):
+            print('transposition: ', str(-i))
+            tmpMat = np.roll(initMat, -i, axis=0)
+            all_matrices = np.hstack( (all_matrices, tmpMat) )
+            if padding > 0:
+                all_structures = np.hstack( (all_structures, tmp_structure) )
+    
+    # check if only binary output is required
+    if bin_out:
+        print('generating binary output')
+        all_matrices[all_matrices > 0] = 1
+    
+    # check if voice-limit augmentation has been asked
+    if voice_aug:
+        # do voice augmentation
+        print('performing voice augmentation')
+        new_mat = np.zeros( all_matrices.shape )
+        for i in range(all_matrices.shape[1]):
+            if np.count_nonzero(all_matrices[:,i]) > 3:
+                passes = all_matrices[:,i].argsort()[-2:][::1]
+                new_mat[passes, i] = all_matrices[passes, i]
+            elif np.count_nonzero(all_matrices[:,i]) >= 1:
+                passes = all_matrices[:,i].argsort()[-1:][::1]
+                new_mat[passes, i] = all_matrices[passes, i]
+        all_matrices = np.hstack( (all_matrices, new_mat) )
+        if padding > 0:
+            all_structures = np.hstack( (all_structures, all_structures) )
+        # octave augmentation if is binary
+        if bin_out:
+            new_mat = np.zeros( all_matrices.shape )
+            for i in range(all_matrices.shape[1]):
+                new_mat[:,i] = np.logical_or( np.logical_or( all_matrices[:,i], np.roll(all_matrices[:,i], 12) ), np.roll(all_matrices[:,i], -12) )
+            all_matrices = np.hstack( (all_matrices, new_mat) )
+            if padding > 0:
+                all_structures = np.hstack( (all_structures, all_structures) )
+    
+    # check if sparsity augmentation has been asked
+    if sparse_aug:
+        # do sparsity augmentation
+        print('performing sparsity augmentation')
+        new_mat = np.zeros( all_matrices.shape )
+        for i in range(all_matrices.shape[1]):
+            if np.count_nonzero(all_matrices[:,i]) >= 1:
+                # decide for passing the column
+                if np.random.rand(1)[0] < 0.9/(1+ 0.2*(i%16) + 0.5*(i%8) + 0.5*(i%4) + 4*(i%2)):
+                    new_mat[:,i] = all_matrices[:,i]
+        all_matrices = np.hstack( (all_matrices, new_mat) )
+        if padding > 0:
+            all_structures = np.hstack( (all_structures, all_structures) )
+    
+    # check if register augmentation has been asked
+    if len(register_aug) > 0:
+        # do register augmentation
+        print('performing register augmentation')
+        new_all_matrices = np.array(all_matrices)
+        for shift in register_aug:
+            print('range shift: ', shift)
+            new_mat = np.zeros( all_matrices.shape )
+            for i in range(all_matrices.shape[1]):
+                # print('i: ', i)
+                if np.count_nonzero(all_matrices[:,i]) >= 1:
+                    new_mat[:,i] = np.roll(all_matrices[:,i], shift)
+            new_all_matrices = np.hstack( (new_all_matrices, new_mat) )
+            if padding > 0:
+                all_structures = np.hstack( (all_structures, all_structures) )
+        all_matrices = np.array( new_all_matrices )
+    
+    return all_matrices, all_structures

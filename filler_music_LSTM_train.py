@@ -27,7 +27,7 @@ parts_for_surface = [0, 1]
 # time resolution should be set by the user
 time_res = 8
 
-m = s2n.get_concat_noFeats_squeezeOcts(folderName, parts_for_surface, time_res, transpose=True, voice_aug=False, sparse_aug=False, register_aug=[], padding=32, octave_squeeze=3)
+m,s = s2n.get_concat_startEnd_squeezeOcts(folderName, parts_for_surface, time_res, transpose=True, voice_aug=False, sparse_aug=False, register_aug=[], padding=32, octave_squeeze=3)
 
 # PREPARE DATA FOR LSTM =======================================================
 # test batch generation example
