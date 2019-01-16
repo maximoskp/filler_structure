@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0>
+    <style> body {padding: 0; margin: 0;} </style>
+    <!-- <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.1.0/socket.io.dev.js"></script> -->
+    <script type="text/javascript" src="static/soundfont-player.min.js"></script>
+    <script type="text/javascript" src="static/socket.io.js"></script>
+    <script type="text/javascript" src="static/NexusUI.js"></script>
+    <script type="text/javascript" src="static/jquery.min.js"></script>
+  </head>
+  <body>
+    <div id="buttons" style="width:150px; float: left;">
+      <div id="button_clear"></div>
+      <div id="button_1"></div>
+      <div id="button_4"></div>
+      <div id="button_8"></div>
+      <div id="button_16"></div>
+      <div id="button_play_stop"></div>
+    </div>
+    <div id="target" style="float: right;"></div>
+    <script>
+      // control buttons
+      var button_clear = new Nexus.TextButton('#button_clear',{
+          'size': [150,50],
+          'state': false,
+          'text': 'Clear',
+          'alternate': false
+      });
+      var button_1 = new Nexus.TextButton('#button_1',{
+          'size': [150,50],
+          'state': false,
+          'text': 'Add 1',
+          'alternate': false
+      });
+      var button_4 = new Nexus.TextButton('#button_4',{
+          'size': [150,50],
+          'state': false,
+          'text': 'Add 4',
+          'alternate': false
+      });
+      var button_8 = new Nexus.TextButton('#button_8',{
+          'size': [150,50],
+          'state': false,
+          'text': 'Add 8',
+          'alternate': false
+      });
+      var button_16 = new Nexus.TextButton('#button_16',{
+          'size': [150,50],
+          'state': false,
+          'text': 'Add 16',
+          'alternate': false
+      });
+      var button_play_stop = new Nexus.TextButton('#button_play_stop',{
+          'size': [150,50],
+          'state': false,
+          'text': 'Play/Stop',
+          'alternate': false
+      });
+      // for playin note when pressing on sequencer
+      var testPlay = null;
+      // shared matrix between server and client
+      var matrix_from_server = []
+      var rows_from_server = []
+      var columns_from_server = []
+      // client
+      var socket;
+      var namespace = '/test';
+      socket = io.connect(location.protocol + '//' + document.domain + ':' + location.port + namespace);
+      socket.on('send matrix', function(msg){
+        matrix_from_server = msg['matrix'];
+        rows_from_server = msg['rows']
+        columns_from_server = msg['columns']
+        console.log('received matrix: ', matrix_from_server);
+        matrix_to_sequencer(matrix_from_server, rows_from_server, columns_from_server);
+      });
+      // load instrument
+      window.AudioContext = window.AudioContext||window.webkitAudioContext;
+      var context = new AudioContext();
+      var initSound = "acoustic_grand_piano";
+      var lead = Soundfont.instrument(context, initSound);
+      // function for playing a note
+      function play(midinote) {
+        lead.then(function (inst) {
+            inst.play(midinote+48, 0, {
+                loop: false
+            });
+        });
+      }
+      // initial setup
+      var playing = false;
+      var sequencer_rows = 34;
+      var sequencer_columns = 16;
+      var sequencer = new Nexus.Sequencer('#target',{
+        'size': [1000,700],
+        'mode': 'toggle',
+        'rows': sequencer_rows,
+        'columns': sequencer_columns
+      })
+      // set tempo
+      // sequencer.interval.ms = 125;
+      // changing values
+      sequencer.on('change',function(v) {
+        // console.log(v);
+        if (v['state']){
+          testPlay = v['row'];
+          setTimeout(cancel_testPlay, 300);
+        }else{
+          testPlay = null;
+        }
+      })
+      function cancel_testPlay(){
+        testPlay = null;
+      }
+      // when a step happens
+      sequencer.on('step',function(v) {
+        // console.log(v);
+        for (var i=0; i<v.length; i++){
+          if (v[i] > 0){
+            // console.log('playing: ', i);
+            play(i)
+          }
+        }
+      })
+
+      // keyboard commands
+      $(document).keydown(function(e) {
+        console.log(e.which)
+          switch (e.which) {
+            case 32:
+              if (!playing){
+                playing = true;
+                sequencer.start();
+              }else{
+                playing = false;
+                sequencer.stop();
+                sequencer.stepper.value = -1;
+              }
+              break;
+            case 77:
+              // show matrix
+              console.log("sequencer.matrix: ", sequencer.matrix);
+              // sequencer.matrix.set.cell(5,5,1);
+              break;
+            case 66:
+              console.log('sequencer.stepper: ', sequencer.stepper);
+              break;
+            case 78:
+              console.log("sending");
+              var currMat = breakDownMatrix(sequencer.matrix.pattern)
+              console.log('sequencer.matrix.pattern: ', sequencer.matrix.pattern);
+              socket.emit('send matrix', {'matrix': currMat, 'rows': sequencer_rows, 'columns': sequencer_columns});
+              console.log("sent!");
+              break;
+            default:
+              console.log('no command for this key');
+            return;
+          }
+          e.preventDefault();
+      });
+
+      // break down matrix to a single array
+      var breakDownMatrix = function(m){
+        var r = [];
+        for (var i=0; i<m.length; i++){
+          for (var j=0; j<m[0].length; j++){
+            if(m[i][j]){
+              r.push(1)
+            }else{
+              r.push(0)
+            }
+          }
+        }
+        return r;
+      };
+      // matrix_to_sequencer
+      var matrix_to_sequencer = function(m, r, c){
+        m_deserialised = deserialise(m, r, c)
+        for(var i=0; i<Math.min(r,sequencer_rows); i++){
+          for(var j=0; j<Math.min(c,sequencer_columns); j++){
+            sequencer.matrix.set.cell(j,i,m_deserialised[i][j]);
+          }
+        }
+      };
+      var deserialise = function(m, r, c){
+        d = [];
+        tmpCounter = 0;
+        for(var i=0; i<r; i++){
+          tmpRow = []
+          for(var j=0; j<c; j++){
+            tmpRow.push(m[tmpCounter]);
+            tmpCounter++;
+          }
+          d.push(tmpRow);
+        }
+        return d;
+      };
+      // identify mouse down for new notes to sound - event 'change' in sequencer
+      function mouse_clicked(){
+        console.log('clicked! - ', testPlay!=null);
+        if (testPlay != null){
+          play(33-testPlay);
+        }
+      };
+      document.body.addEventListener('click', mouse_clicked, true);
+      // button events
+      button_clear.on('change',function(v) {
+        if (button_clear.state){
+          for(var i=0; i<sequencer_rows; i++){
+            for(var j=0; j<sequencer_columns; j++){
+              sequencer.matrix.set.cell(j,i,0);
+            }
+          }
+        }
+      });
+      button_1.on('change',function(v) {
+        if (button_1.state){
+          var currMat = breakDownMatrix(sequencer.matrix.pattern)
+          socket.emit('send matrix', {'matrix': currMat, 'rows': sequencer_rows, 'columns': sequencer_columns, 'num_notes': 1});
+        }
+      });
+      button_4.on('change',function(v) {
+        if (button_4.state){
+          var currMat = breakDownMatrix(sequencer.matrix.pattern)
+          socket.emit('send matrix', {'matrix': currMat, 'rows': sequencer_rows, 'columns': sequencer_columns, 'num_notes': 4});
+        }
+      });
+      button_8.on('change',function(v) {
+        if (button_8.state){
+          var currMat = breakDownMatrix(sequencer.matrix.pattern)
+          socket.emit('send matrix', {'matrix': currMat, 'rows': sequencer_rows, 'columns': sequencer_columns, 'num_notes': 8});
+        }
+      });
+      button_16.on('change',function(v) {
+        if (button_16.state){
+          var currMat = breakDownMatrix(sequencer.matrix.pattern)
+          socket.emit('send matrix', {'matrix': currMat, 'rows': sequencer_rows, 'columns': sequencer_columns, 'num_notes': 16});
+        }
+      });
+      button_play_stop.on('change',function(v) {
+        if (button_play_stop.state){
+          if (!playing){
+            playing = true;
+            sequencer.start();
+          }else{
+            playing = false;
+            sequencer.stop();
+            sequencer.stepper.value = -1;
+          }
+        }
+      });
+    </script>
+  </body>
+</html>
