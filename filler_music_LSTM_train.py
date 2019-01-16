@@ -29,12 +29,14 @@ time_res = 8
 
 m,s = s2n.get_concat_startEnd_squeezeOcts(folderName, parts_for_surface, time_res, transpose=True, voice_aug=False, sparse_aug=False, register_aug=[], padding=32, octave_squeeze=3)
 
+combined_matrix = np.vstack( (s,m) )
+
 # PREPARE DATA FOR LSTM =======================================================
 # test batch generation example
 max_len = 32
 batch_size = 640
 step = 1
-input_rows = m.shape[0]
+input_rows = combined_matrix.shape[0]
 output_rows = m.shape[0]
 num_units = [32, 32]
 learning_rate = 0.001
@@ -48,7 +50,7 @@ input_mats = []
 output_mats = []
 
 for i in range(0, m.shape[1] - max_len, step):
-    input_mats.append(m[:,i:i+max_len])
+    input_mats.append(combined_matrix[:,i:i+max_len])
     output_mats.append(m[:,i+max_len])
 
 # make training and testing tensors
@@ -69,7 +71,7 @@ for _ in range(num_batches):
 
 # save train batch for getting seed
 seed = train_batch[:1:]
-np.savez('saved_data/training_data.npz', m=m, seed=seed)
+np.savez('saved_data/training_data.npz', combined_matrix=combined_matrix, seed=seed)
 
 tf.reset_default_graph()
 
