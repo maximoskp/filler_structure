@@ -1,3 +1,2 @@
 model_checkpoint_path: "file.ckpt"
-all_model_checkpoint_paths: "..\\..\\..\\saved_model\\file.ckpt"
 all_model_checkpoint_paths: "file.ckpt"
