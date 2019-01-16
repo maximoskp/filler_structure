@@ -11,20 +11,20 @@ class PolyFiller():
         print('Initialising PolyFiller')
         # retrieve saved data
         d = np.load('saved_data/training_data.npz')
-        m = d['m']
-        f = d['f']
-        self.lowest_limit = d['lowest_limit']
-        self.highest_limit = d['highest_limit']
-        self.notes_range = self.highest_limit - self.lowest_limit
-        self.train_data = d['train_data']
+        self.combined_matrix = d['combined_matrix']
+        self.seed = d['seed']
+        self.m = self.combined_matrix[2:, :]
+        self.s = self.combined_matrix[:2, :]
+        self.notes_range = m.shape[0]
+        self.seed = d['seed']
         # test batch generation example
-        self.max_len = 16
+        self.max_len = d['max_len']
         self.composition_length = 64
-        self.batch_size = 320
+        self.batch_size = d['batch_size']
         self.step = 1
-        self.input_rows = m.shape[0] + f.shape[0]
+        self.input_rows = self.combined_matrix.shape[0]
         self.output_rows = m.shape[0]
-        self.num_units = 256
+        self.num_units = d['num_units']
         self.learning_rate = 0.001
         self.epochs = 5000
         self.temperature = 0.5
@@ -45,8 +45,6 @@ class PolyFiller():
         self.sess = tf.Session()
         self.saver = tf.train.Saver()
         self.saver.restore(self.sess, 'saved_model/file.ckpt')
-        # keep a standard seed
-        self.seed = self.train_data[:1:]
         # keep the predictions matrix - same size as matrix but with 0s
         # in the place of existing notes and prob values to all others
         self.predictions = np.zeros( (self.notes_range, self.composition_length) )
