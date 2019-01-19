@@ -71,7 +71,7 @@ for _ in range(num_batches):
 
 # save train batch for getting seed
 seed = train_batch[:1:]
-np.savez('saved_data/training_data.npz', combined_matrix=combined_matrix, seed=seed, max_len=max_len, batch_size=batch_size, num_units)
+np.savez('saved_data/training_data.npz', combined_matrix=combined_matrix, seed=seed, max_len=max_len, batch_size=batch_size, num_units=num_units)
 
 tf.reset_default_graph()
 

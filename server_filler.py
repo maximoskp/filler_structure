@@ -28,7 +28,7 @@ socketio = SocketIO(app)
 # __NEW random number
 with app.app_context():
     current_app.rr = []
-    current_app.matrix = np.zeros( (34,16) )
+    current_app.matrix = np.zeros( (36,32) )
     current_app.input_matrix = []
     current_app.input_rows = []
     current_app.input_columns = []
@@ -52,10 +52,16 @@ def test_message(mat):
     print('current_app.input_rows: ', current_app.input_rows)
     tmpMat = deserialise_input_matrix(current_app.input_matrix, current_app.input_rows, current_app.input_columns)
     current_app.matrix[:current_app.input_rows, :current_app.input_columns] = tmpMat
+    current_app.matrix = np.array( current_app.matrix )
+    print('current_app.matrix.shape: ', current_app.matrix.shape)
+    # pad starting and ending parts
+    current_app.matrix = np.hstack( (np.zeros( (36,32) ), current_app.matrix) )
+    current_app.matrix = np.hstack( (current_app.matrix, np.zeros( (36,32 ) )) )
     print('current_app.matrix: ', current_app.matrix)
     with app.app_context():
         current_app.model.fill_notes_in_matrix(matrix_in=current_app.matrix, num_notes=current_app.num_notes)
-        current_app.matrix = current_app.model.matrix
+        # remove starting and ending parts
+        current_app.matrix = current_app.model.matrix[:, 32:64]
         emit('send matrix', {'matrix': serialize_response_matrix(current_app.matrix), 'rows': current_app.model.matrix.shape[0], 'columns': current_app.model.matrix.shape[1]})
 
 @socketio.on('my broadcast event', namespace='/test')
